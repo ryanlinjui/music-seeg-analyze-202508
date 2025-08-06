@@ -181,5 +181,6 @@ cython_debug/
 .cursorindexingignore
 
 *.wav
+*.mp3
 *.mat
 *.png
