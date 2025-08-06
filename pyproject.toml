@@ -1,0 +1,14 @@
+[project]
+name = "music-seeg-analyze-202508"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "librosa>=0.11.0",
+    "matplotlib>=3.10.5",
+    "pandas>=2.3.1",
+    "pyqt6>=6.9.1",
+    "pyqtgraph>=0.13.7",
+    "seaborn>=0.13.2",
+]
