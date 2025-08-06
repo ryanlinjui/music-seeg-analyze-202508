@@ -144,7 +144,10 @@ class MusicSEEGVisualizer(QMainWindow):
                 print(f"   - 最終範圍: {audio_data.min():.4f} ~ {audio_data.max():.4f}")
                 print(f"   - 持續時間: {len(audio_data) / target_fs:.1f} 秒")
                 
-                # 根據對應的 SEEG 數據長度截取音樂數據
+                # 決定最終的對齊策略：以音樂長度為主，SEEG 對應截取
+                original_music_length = len(audio_data)
+                print(f"   - 音樂原始長度: {original_music_length} 採樣點 ({original_music_length/target_fs:.1f} 秒)")
+                
                 if self.seeg_data:
                     # 獲取第一個病人對應歌曲的 SEEG 長度作為參考
                     first_patient = list(self.seeg_data.keys())[0]
@@ -152,15 +155,16 @@ class MusicSEEGVisualizer(QMainWindow):
                     
                     print(f"   - 對應 SEEG 長度: {seeg_length} 採樣點 ({seeg_length/target_fs:.1f} 秒)")
                     
-                    if len(audio_data) > seeg_length:
-                        # 截取音樂數據到 SEEG 的長度
-                        audio_data = audio_data[:seeg_length]
-                        print(f"   - 截取後音樂長度: {len(audio_data)} 採樣點 ({len(audio_data)/target_fs:.1f} 秒)")
-                    elif len(audio_data) < seeg_length:
-                        # 如果音樂比 SEEG 短，進行零填充
-                        padding = seeg_length - len(audio_data)
-                        audio_data = np.pad(audio_data, (0, padding), mode='constant', constant_values=0)
-                        print(f"   - 零填充後音樂長度: {len(audio_data)} 採樣點 ({len(audio_data)/target_fs:.1f} 秒)")
+                    # 新策略：以較短的長度為準，避免零填充造成的不同步
+                    final_length = min(original_music_length, seeg_length)
+                    
+                    if len(audio_data) > final_length:
+                        # 截取音樂數據
+                        audio_data = audio_data[:final_length]
+                        print(f"   - 音樂截取至: {len(audio_data)} 採樣點 ({len(audio_data)/target_fs:.1f} 秒)")
+                    
+                    print(f"   - ✅ 最終對齊長度: {final_length} 採樣點 ({final_length/target_fs:.1f} 秒)")
+                    print(f"   - 📊 SEEG 也將對應截取至此長度確保同步")
                 
                 
                 # 計算多種特徵用於可視化
@@ -1005,6 +1009,14 @@ class MusicSEEGVisualizer(QMainWindow):
             if self.current_channel < seeg_data.shape[0]:
                 # 取第一個條件的數據 (第三維度的第一個)
                 channel_data = seeg_data[self.current_channel, :, 0]
+                
+                # 🔧 新增：根據音樂長度截取 SEEG 數據確保時間軸同步
+                if display_data is not None:
+                    music_length = len(display_data)
+                    if len(channel_data) > music_length:
+                        channel_data = channel_data[:music_length]
+                        print(f"🔧 SEEG 截取至音樂長度: {len(channel_data)} 採樣點 ({len(channel_data)/seeg_fs:.1f} 秒)")
+                
                 time_seeg = np.arange(len(channel_data)) / seeg_fs  # 使用正確的採樣頻率
                 
                 # 如果音樂數據無效，使用 SEEG 長度作為 max_time
