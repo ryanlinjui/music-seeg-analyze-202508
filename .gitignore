@@ -184,6 +184,8 @@ cython_debug/
 *.mp3
 *.mat
 *.png
+assets/*
+outputs/*
 
 # mac
 .DS_Store

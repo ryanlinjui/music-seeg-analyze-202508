@@ -13,6 +13,12 @@ import librosa
 import warnings
 warnings.filterwarnings('ignore')
 
+# 導入分析模組
+from analyze.beat import BeatBPMAnalyzer
+
+# 導入分析模組
+from analyze.beat import BeatBPMAnalyzer
+
 class MusicSEEGVisualizer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -44,8 +50,14 @@ class MusicSEEGVisualizer(QMainWindow):
         self.envelope_value_label = None
         self.seeg_value_label = None
         
+        # 分析器初始化
+        self.beat_analyzer = None
+        
         # 載入數據
         self.load_data()
+        
+        # 初始化分析器（使用載入數據後的採樣頻率）
+        self.beat_analyzer = BeatBPMAnalyzer(fs=self.fs)
         
         # 設置 UI
         self.init_ui()
@@ -332,6 +344,28 @@ class MusicSEEGVisualizer(QMainWindow):
         reset_btn = QPushButton("重置視圖")
         reset_btn.clicked.connect(self.reset_view)
         layout.addWidget(reset_btn)
+        
+        # Beat-BPM分析按鈕
+        analyze_btn = QPushButton("🎼 Beat-BPM分析")
+        analyze_btn.clicked.connect(self.run_beat_bpm_analysis)
+        analyze_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff6b6b;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #ff5252;
+            }
+            QPushButton:pressed {
+                background-color: #e53935;
+            }
+        """)
+        layout.addWidget(analyze_btn)
         
         # 音樂顯示模式選擇
         layout.addWidget(QLabel("音樂顯示:"))
@@ -1082,6 +1116,149 @@ class MusicSEEGVisualizer(QMainWindow):
         # 設置初始視圖範圍
         self.reset_view()
     
+    def run_beat_bpm_analysis(self):
+        """執行Beat-BPM分析並顯示結果"""
+        try:
+            # 檢查是否有有效的數據
+            if not self.music_data or not self.seeg_data:
+                print("❌ 沒有可用的音樂或SEEG數據")
+                return
+            
+            # 獲取當前選擇的數據
+            current_music = self.music_data.get(self.current_song)
+            if not current_music or current_music['audio'] is None:
+                print("❌ 當前音樂數據無效")
+                return
+            
+            if not self.current_patient or self.current_patient not in self.seeg_data:
+                print("❌ 當前病人數據無效")
+                return
+            
+            patient_data = self.seeg_data[self.current_patient][self.current_song]
+            if self.current_channel >= patient_data['data'].shape[0]:
+                print("❌ 當前通道索引超出範圍")
+                return
+            
+            # 獲取分析數據
+            audio_data = current_music['audio']
+            seeg_data = patient_data['data'][self.current_channel, :]
+            song_name = current_music['name']
+            channel_name = f"Patient_{self.current_patient}_Ch{self.current_channel+1}"
+            
+            print(f"🎵 開始分析 {song_name} - {channel_name}")
+            print(f"   音樂數據長度: {len(audio_data)} 點")
+            print(f"   SEEG數據長度: {len(seeg_data)} 點")
+            
+            # 更新分析器的採樣頻率
+            self.beat_analyzer.fs = self.fs
+            
+            # 執行分析
+            results = self.beat_analyzer.analyze_beat_bpm_relationship(
+                audio_data, seeg_data, song_name, channel_name
+            )
+            
+            if results:
+                print("✅ 分析完成，結果已儲存到outputs資料夾")
+                
+                # 創建彈出視窗顯示結果圖
+                self.show_analysis_results(results, song_name, channel_name)
+            else:
+                print("❌ 分析失敗")
+                
+        except Exception as e:
+            print(f"❌ 分析過程中發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def show_analysis_results(self, results, song_name, channel_name):
+        """顯示分析結果的彈出視窗"""
+        try:
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit
+            from PyQt6.QtCore import Qt
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.figure import Figure
+            
+            # 創建對話框視窗
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"🎼 Beat-BPM分析結果 - {song_name}")
+            dialog.setGeometry(200, 200, 1200, 800)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # 標題
+            title_label = QLabel(f"🎵 {song_name} - {channel_name}")
+            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; padding: 10px;")
+            layout.addWidget(title_label)
+            
+            # 分析結果摘要
+            summary_text = f"""
+📊 分析結果摘要:
+• 檢測到的BPM: {results.get('detected_bpm', 'N/A'):.1f}
+• 已知BPM: {results.get('known_bpm', 'N/A')}
+• BPM準確度: {results.get('bpm_accuracy', 0):.1f}%
+• 同步品質評分: {results.get('sync_quality_score', 0):.2f}
+• 音樂beat數: {len(results.get('music_beats', []))}
+• SEEG beat數: {len(results.get('seeg_beats', []))}
+• 相關係數: {results.get('correlation', 0):.3f}
+• 相位同步指數: {results.get('phase_sync_index', 0):.3f}
+            """
+            
+            summary_label = QTextEdit()
+            summary_label.setPlainText(summary_text)
+            summary_label.setMaximumHeight(200)
+            summary_label.setStyleSheet("background-color: #f8f9fa; font-family: monospace; font-size: 12px;")
+            layout.addWidget(summary_label)
+            
+            # 顯示分析圖表
+            if 'figure_path' in results:
+                # 重新讀取並顯示圖片
+                import matplotlib.image as mpimg
+                
+                figure = Figure(figsize=(12, 8))
+                canvas = FigureCanvas(figure)
+                
+                # 讀取儲存的圖片
+                img = mpimg.imread(results['figure_path'])
+                ax = figure.add_subplot(111)
+                ax.imshow(img)
+                ax.axis('off')
+                ax.set_title(f"Beat-BPM 分析結果圖表", fontsize=14, fontweight='bold')
+                
+                layout.addWidget(canvas)
+            
+            # 關閉按鈕
+            close_btn = QPushButton("關閉")
+            close_btn.clicked.connect(dialog.close)
+            close_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #6c757d;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    padding: 10px 20px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #545b62;
+                }
+            """)
+            
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
+            btn_layout.addWidget(close_btn)
+            btn_layout.addStretch()
+            layout.addLayout(btn_layout)
+            
+            # 顯示對話框
+            dialog.exec()
+            
+        except Exception as e:
+            print(f"❌ 顯示結果視窗時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+
     def reset_view(self):
         """重置視圖到全範圍"""
         if self.current_song in self.music_data:
